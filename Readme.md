@@ -10,6 +10,14 @@ Add the script to your codebase.
 
 `<script type="application/javascript" src="sc-detect.min.js"/>`
 
+Initialize the analysis for the field
+
+`scDetect.query(htmlInputElement).initialize({lastAnalysis: lastAnalysis})`
+
+Initialize the analysis for the field using indexedDB, requires a unique identifier in the field; if the analysis is not provided from server side then it is session specific, and it will not keep track sessions outside the browser used or if incognito is used.
+
+`scDetect.query(htmlInputElement).initialize({indexedDBId: [uuid]]})`
+
 Request the data later by using the function, the object must be an input field
 
 `scDetect.query(htmlInputElement).getLastAnalysis()`
@@ -37,11 +45,11 @@ Setup factors on the fly by doing
 scDetect.setFactors([factors])
 ```
 
-## Event Object Shape
+## Analysis Object Shape
 
- - e.detail.reasons, an array with the main reasons that specificies why they think this may have been a case of cheating.
- - e.detail.confidence, a floating point number from 0 to 1 with the confidence score, in practise it doesn't go over 0.7
- - e.detail.analysis an object that specifies what data was analyzed to build the heuristic
+ - a.reasons, an array with the main reasons that specificies why they think this may have been a case of cheating.
+ - a.confidence, a floating point number from 0 to 1 with the confidence score, in practise it doesn't go over 0.7
+ - a.analysis an object that specifies what data was analyzed to build the heuristic
 
 ## List of Reasons
 
