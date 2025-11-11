@@ -80,9 +80,9 @@ KEEPS_SWITCHING_TABS_AND_COPY_PASTING has a timing factor, but UNMODIFIED_PASTES
     copy_size_threshold: 50,
     statistics: {
         average_human_typing_speed_wpm: [int],
-        average_human_typing_speed_lpm: [int],
+        average_human_typing_speed_cpm: [int],
         fast_human_typing_speed_wpm: [int],
-        fast_human_typing_speed_lpm: [int],
+        fast_human_typing_speed_cpm: [int],
         average_human_reading_speed_wpm: [int],
         fast_human_reading_speed_wpm: [int],
     }

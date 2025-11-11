@@ -1,0 +1,14 @@
+{
+  "name": "sc-detect",
+  "version": "1.0.0",
+  "description": "A simple Javascript Library to detect potential cheating in educational applications that uses simple heuristics to detect it.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "0.27.0"
+  }
+}
