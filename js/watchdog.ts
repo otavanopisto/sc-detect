@@ -18,6 +18,10 @@ export interface WatchdogConfig {
         fast_human_typing_speed_cpm: number,
         average_human_reading_speed_wpm: number,
         fast_human_reading_speed_wpm: number,
+    },
+    settings: {
+        relevant_copy_event_minutes: number;
+        relevant_tab_in_out_event_minutes: number;
     }
 }
 
@@ -39,6 +43,10 @@ const DEFAULT_CONFIG: WatchdogConfig = {
         fast_human_typing_speed_cpm: 300,
         average_human_reading_speed_wpm: 200,
         fast_human_reading_speed_wpm: 300,
+    },
+    settings: {
+        relevant_copy_event_minutes: 5,
+        relevant_tab_in_out_event_minutes: 5,
     }
 }
 
@@ -54,14 +62,33 @@ const DEFAULT_FACTORS: WatchdogFactors = {
     non_native_language: false,
 }
 
+export interface WatchdogHandleState {
+    COPY_PASTE_CONTRIBUTIONS: Array<{ aiScore: number; score: number; timestamp: Date;
+        similarity: number; copyFactor: number; tabSwitchFactor: number; content: string; }>;
+    COPY_RELATES_TO_PASTE: number;
+    INPUT_CONTRIBUTIONS?: Array<{ aiScore: number; timestamp: Date; }>;
+    CONTENT_CONTAINS_AI_SIGNATURES: number;
+    UNMODIFIED_PASTES: number;
+}
+
 class WatchdogHandle {
     element: HTMLElement;
     watchdog: Watchdog;
     isInitialized: boolean = false;
+    state: WatchdogHandleState;
 
     constructor(element: HTMLElement, watchdog: Watchdog) {
         this.element = element;
         this.watchdog = watchdog;
+        this.state = {
+            COPY_PASTE_CONTRIBUTIONS: [],
+            INPUT_CONTRIBUTIONS: [],
+
+            COPY_RELATES_TO_PASTE: 0,
+            CONTENT_CONTAINS_AI_SIGNATURES: 0,
+
+            UNMODIFIED_PASTES: 0,
+        };
 
         this.handlePaste = this.handlePaste.bind(this);
         this.handleInput = this.handleInput.bind(this);
@@ -77,10 +104,15 @@ class WatchdogHandle {
         if (tagName === 'textarea' || (tagName === 'input' && type === 'text') || this.element.isContentEditable) {
             // Start monitoring the element for copy-paste and tab switch events
             // Implementation of monitoring logic goes here
+            this.loadState();
             this.restart();
         } else {
             throw new Error('Element is not a valid input field (textarea, input type=text, or contenteditable).');
         }
+    }
+    loadState() {
+        // Implementation of loadState method for this handle
+        // Load any saved state from this.state
     }
     restart() {
         // Implementation of restart method for this handle
@@ -130,21 +162,128 @@ class WatchdogHandle {
         // within a reasonable time frame (e.g., 5 minutes)
         const now = new Date();
         let foundRelatedCopy = false;
+        let foundRelatedCopyTimeFactor = 0;
         let switchedTabsRecently = false;
+        let switchedTabsRecentlyTimeFactor = 0;
 
         if (this.watchdog.lastCopiedInfo) {
             const timeDiff = now.getTime() - this.watchdog.lastCopiedInfo.timestamp.getTime();
-            if (timeDiff < 5 * 60 * 1000) { // 5 minutes
+            if (timeDiff < this.watchdog.config.settings.relevant_copy_event_minutes * 60 * 1000) {
                 foundRelatedCopy = true;
+                foundRelatedCopyTimeFactor = 1 - (timeDiff / (this.watchdog.config.settings.relevant_copy_event_minutes * 60 * 1000));
+                if (foundRelatedCopyTimeFactor < 0.5) {
+                    foundRelatedCopyTimeFactor = 0.5;
+                }
             }
         }
 
         if (this.watchdog.activeTabFocusInfo) {
             const timeDiff = now.getTime() - this.watchdog.activeTabFocusInfo.focused_in.getTime();
-            if (timeDiff < 5 * 60 * 1000) { // 5 minutes
+            if (timeDiff < this.watchdog.config.settings.relevant_tab_in_out_event_minutes * 60 * 1000) {
                 switchedTabsRecently = true;
+                switchedTabsRecentlyTimeFactor = 1 - (timeDiff / (this.watchdog.config.settings.relevant_tab_in_out_event_minutes * 60 * 1000));
+                if (switchedTabsRecentlyTimeFactor < 0.5) {
+                    switchedTabsRecentlyTimeFactor = 0.5;
+                }
             }
         }
+
+        const foundRelatedCopyFactor = (foundRelatedCopy ? 1 : 0) * foundRelatedCopyTimeFactor;
+        const switchedTabsRecentlyFactor = (switchedTabsRecently ? 1 : 0) * switchedTabsRecentlyTimeFactor;
+        const cheatingPasteScore = similarity * foundRelatedCopyFactor * switchedTabsRecentlyFactor;
+
+        const aiScore = findAISignatures(text, 1);
+
+        this.state.COPY_PASTE_CONTRIBUTIONS.push({
+            score: cheatingPasteScore,
+            aiScore: aiScore,
+            timestamp: now,
+            similarity: similarity,
+            copyFactor: foundRelatedCopyFactor,
+            tabSwitchFactor: switchedTabsRecentlyFactor,
+            content: text,
+        });
+        // calculate average score, guarding against empty contributions array
+        if (this.state.COPY_PASTE_CONTRIBUTIONS.length === 0) {
+            this.state.COPY_RELATES_TO_PASTE = 0;
+        } else {
+            const total = this.state.COPY_PASTE_CONTRIBUTIONS.reduce((acc, cur) => acc + cur.score, 0);
+            this.state.COPY_RELATES_TO_PASTE = total / this.state.COPY_PASTE_CONTRIBUTIONS.length;
+        }
+
+        this.recalculateAIScore();
+        this.recalculateUnmodifiedPastes();
+    }
+    recalculateAIScore() {
+        // recalculate the ai score based on current content
+        // calculate AI signature average
+        let contributors = 0;
+        let score = 0;
+        if (this.state.COPY_PASTE_CONTRIBUTIONS.length > 0) {
+            const copyPasteContributionsScore = this.state.COPY_PASTE_CONTRIBUTIONS.reduce((acc, cur) => acc + cur.aiScore, 0);
+            const copyPasteContributionsScoreAvg = copyPasteContributionsScore / this.state.COPY_PASTE_CONTRIBUTIONS.length;
+            score += copyPasteContributionsScoreAvg;
+            contributors++;
+        }
+        if (this.state.INPUT_CONTRIBUTIONS && this.state.INPUT_CONTRIBUTIONS.length > 0) {
+            const inputContributionsScore = this.state.INPUT_CONTRIBUTIONS.reduce((acc, cur) => acc + cur.aiScore, 0);
+            const inputContributionsScoreAvg = inputContributionsScore / this.state.INPUT_CONTRIBUTIONS.length;
+            score += inputContributionsScoreAvg;
+            contributors++;
+        }
+
+        contributors++;
+        // use both the current and the historical and divide by the contributors
+        const currentAIScore = this.getCurrentAISignatureScore();
+        score += currentAIScore;
+        const averageAIScore = score / contributors;
+
+        this.state.CONTENT_CONTAINS_AI_SIGNATURES = averageAIScore;
+    }
+    recalculateUnmodifiedPastes() {
+        // recalculate unmodified pastes factor
+        let unmodifiedPastes = 0;
+        const totalPastes = this.state.COPY_PASTE_CONTRIBUTIONS.length;
+
+        if (totalPastes === 0) {
+            this.state.UNMODIFIED_PASTES = 0;
+            return;
+        }
+
+        let contentWorking = this.getContentFromHTMLElement();
+        this.state.COPY_PASTE_CONTRIBUTIONS.forEach((contribution) => {
+            if (contentWorking.includes(contribution.content)) {
+                unmodifiedPastes++;
+                // remove the pasted content from the working content to avoid double counting
+                contentWorking = contentWorking.replace(contribution.content, '');
+            }
+        });
+
+        const unmodifiedPastesRatio = unmodifiedPastes / totalPastes;
+        const remainingCharacters = contentWorking.length;
+        const totalCharacters = this.getContentFromHTMLElement().length;
+        const remainingCharactersRatio = totalCharacters > 0 ? remainingCharacters / totalCharacters : 0;
+
+        // combine both ratios to get a final unmodified pastes score
+        const finalUnmodifiedPastesScore = (unmodifiedPastesRatio + (1 - remainingCharactersRatio)) / 2;
+
+        this.state.UNMODIFIED_PASTES = finalUnmodifiedPastesScore;  
+    }
+    getCopyPasteContributions() {
+        return this.state.COPY_PASTE_CONTRIBUTIONS;
+    }
+    getCurrentAISignatureScore() {
+        // get the current value as text from the
+        return findAISignatures(this.getContentFromHTMLElement(), 1);
+    }
+    getContentFromHTMLElement() {
+        // get the value of the input field, textarea or contenteditable
+        if (this.element.tagName.toLowerCase() === 'textarea' || (this.element.tagName.toLowerCase() === 'input' && (this.element as HTMLInputElement).type === 'text')) {
+            return (this.element as HTMLInputElement).value;
+        } else if (this.element.isContentEditable) {
+            return this.element.innerText;
+        }
+        return '';
     }
     handleInput() {
     }
@@ -170,6 +309,7 @@ class Watchdog {
     factors: WatchdogFactors;
     isMonitoring: boolean = false;
     handles: WatchdogHandle[] = [];
+    userId: string | null = null;
     
     tabFocusWatchInfoHistory: TabFocusWatchInfo[] = [];
     activeTabFocusInfo: TabFocusWatchInfo | null = null;
@@ -181,6 +321,7 @@ class Watchdog {
         // Initialization code
         this.config = DEFAULT_CONFIG;
         this.factors = DEFAULT_FACTORS;
+        this.userId = null;
 
         this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
         this.handleCopy = this.handleCopy.bind(this);
@@ -205,11 +346,16 @@ class Watchdog {
             return handle;
         });
     }
-    initialize(config?: Partial<WatchdogConfig>, factors?: Partial<WatchdogFactors>) {
+    initialize(
+        userId: string,
+        config?: Partial<WatchdogConfig>,
+        factors?: Partial<WatchdogFactors>,
+    ) {
         // Implementation of initialize method
         // patch DEFAULT_CONFIG and DEFAULT_FACTORS with provided config and factors
         this.config = { ...DEFAULT_CONFIG, ...config };
         this.factors = { ...DEFAULT_FACTORS, ...factors };
+        this.userId = userId;
 
         if (!this.isMonitoring) {
             this.beginMonitoring();
@@ -222,6 +368,13 @@ class Watchdog {
 
         document.removeEventListener('visibilitychange', this.handleVisibilityChange);
         document.removeEventListener('copy', this.handleCopy);
+    }
+    changeUser(userId: string) {
+        // Implementation of changeUser method
+        this.userId = userId;
+        this.stop();
+        this.handles.forEach((handle) => handle.loadState());
+        this.beginMonitoring();
     }
     beginMonitoring() {
         // Implementation of beginMonitoring method
