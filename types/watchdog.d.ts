@@ -125,6 +125,7 @@ declare class WatchdogHandle {
     isInitialized: boolean;
     state: WatchdogHandleState;
     loadStateLoader: WatchdogStateLoader | null;
+    listeners: Array<(analysis: IWatchdogAnalysis) => void>;
     constructor(element: HTMLElement, watchdog: Watchdog);
     setStateLoader(fn: WatchdogStateLoader): void;
     initialize(): Promise<void>;
@@ -141,21 +142,25 @@ declare class WatchdogHandle {
     private recalculateKeepsSwitchingTabsAndCopyPasting;
     getCurrentAISignatureScore(): number;
     getContentFromHTMLElement(): string;
-    getLastAnalysis(): {
-        raw: {
-            COPY_RELATES_TO_PASTE: number;
-            CONTENT_CONTAINS_AI_SIGNATURES: number;
-            UNMODIFIED_PASTES: number;
-            KEEPS_SWITCHING_TABS_AND_COPY_PASTING: number;
-        };
-        weighted: {
-            COPY_RELATES_TO_PASTE: number;
-            CONTENT_CONTAINS_AI_SIGNATURES: number;
-            UNMODIFIED_PASTES: number;
-            KEEPS_SWITCHING_TABS_AND_COPY_PASTING: number;
-        };
-        confidence: number;
+    getLastAnalysis(): IWatchdogAnalysis;
+    private onNewScoreCalculated;
+    addEventListenerOnNewScoreCalculated(callback: (analysis: IWatchdogAnalysis) => void): void;
+    removeEventListenerOnNewScoreCalculated(callback: (analysis: IWatchdogAnalysis) => void): void;
+}
+export interface IWatchdogAnalysis {
+    raw: {
+        COPY_RELATES_TO_PASTE: number;
+        CONTENT_CONTAINS_AI_SIGNATURES: number;
+        UNMODIFIED_PASTES: number;
+        KEEPS_SWITCHING_TABS_AND_COPY_PASTING: number;
     };
+    weighted: {
+        COPY_RELATES_TO_PASTE: number;
+        CONTENT_CONTAINS_AI_SIGNATURES: number;
+        UNMODIFIED_PASTES: number;
+        KEEPS_SWITCHING_TABS_AND_COPY_PASTING: number;
+    };
+    confidence: number;
 }
 export interface TabFocusWatchInfo {
     focused_in: Date;
@@ -229,7 +234,7 @@ declare class Watchdog {
      * otherwise provide an array of elements directly
      * @param selector
      */
-    queryAll(selector: string | HTMLElement[]): void;
+    queryAll(selector: string | HTMLElement[]): WatchdogHandle[];
     /**
      * initialize the Watchdog module, this needs to be called before starting monitoring
      * otherwise an error will be thrown when trying to monitor elements, as the configuration

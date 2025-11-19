@@ -14,4 +14,8 @@ const scDetect: {
     version: '1.0.0',
 }
 
+if (typeof window !== 'undefined') {
+    (window as any).scDetect = scDetect;
+}
+
 export default scDetect;

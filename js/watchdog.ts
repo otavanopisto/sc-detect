@@ -167,6 +167,7 @@ class WatchdogHandle {
     isInitialized: boolean = false;
     state: WatchdogHandleState;
     loadStateLoader: WatchdogStateLoader | null = null;
+    listeners: Array<(analysis: IWatchdogAnalysis) => void> = [];
 
     constructor(element: HTMLElement, watchdog: Watchdog) {
         this.element = element;
@@ -182,7 +183,7 @@ class WatchdogHandle {
         };
 
         this.handlePaste = this.handlePaste.bind(this);
-        // this.handleInput = this.handleInput.bind(this);
+        this.handleInput = this.handleInput.bind(this);
     }
     setStateLoader(fn: WatchdogStateLoader) {
         this.loadStateLoader = fn;
@@ -246,6 +247,7 @@ class WatchdogHandle {
         this.recalculateAIScore();
         this.recalculateUnmodifiedPastes();
         this.recalculateKeepsSwitchingTabsAndCopyPasting();
+        this.onNewScoreCalculated();
     }
     handlePaste(e: ClipboardEvent) {
         const clipboardData = e.clipboardData;
@@ -334,6 +336,7 @@ class WatchdogHandle {
         this.recalculateAIScore();
         this.recalculateUnmodifiedPastes();
         this.recalculateKeepsSwitchingTabsAndCopyPasting();
+        this.onNewScoreCalculated();
     }
     private recalculateCopyRelatesToPaste() {
         // calculate average score, guarding against empty contributions array
@@ -461,7 +464,7 @@ class WatchdogHandle {
         }
         return '';
     }
-    getLastAnalysis() {
+    getLastAnalysis(): IWatchdogAnalysis {
         // we need to reweight these factors based on the config weights
         const WEIGHTED = {
             COPY_RELATES_TO_PASTE: this.state.COPY_RELATES_TO_PASTE*this.watchdog.config.weights.reasons.COPY_RELATES_TO_PASTE,
@@ -484,6 +487,35 @@ class WatchdogHandle {
                 WEIGHTED.KEEPS_SWITCHING_TABS_AND_COPY_PASTING,
         };
     }
+    private onNewScoreCalculated() {
+        // placeholder for future event handling when a new score is calculated
+        const analysis = this.getLastAnalysis();
+        this.listeners.forEach((listener) => {
+            listener(analysis);
+        });
+    }
+    public addEventListenerOnNewScoreCalculated(callback: (analysis: IWatchdogAnalysis) => void) {
+        this.listeners.push(callback);
+    }
+    public removeEventListenerOnNewScoreCalculated(callback: (analysis: IWatchdogAnalysis) => void) {
+        this.listeners = this.listeners.filter(listener => listener !== callback);
+    }
+}
+
+export interface IWatchdogAnalysis {
+    raw: {
+        COPY_RELATES_TO_PASTE: number;
+        CONTENT_CONTAINS_AI_SIGNATURES: number;
+        UNMODIFIED_PASTES: number;
+        KEEPS_SWITCHING_TABS_AND_COPY_PASTING: number;
+    };
+    weighted: {
+        COPY_RELATES_TO_PASTE: number;
+        CONTENT_CONTAINS_AI_SIGNATURES: number;
+        UNMODIFIED_PASTES: number;
+        KEEPS_SWITCHING_TABS_AND_COPY_PASTING: number;
+    };
+    confidence: number;
 }
 
 export interface TabFocusWatchInfo {
@@ -559,6 +591,12 @@ class Watchdog {
 
         this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
         this.handleCopy = this.handleCopy.bind(this);
+        this.query = this.query.bind(this);
+        this.queryAll = this.queryAll.bind(this);
+        this.initialize = this.initialize.bind(this);
+        this.stop = this.stop.bind(this);
+        this.changeUser = this.changeUser.bind(this);
+        this.beginMonitoring = this.beginMonitoring.bind(this);
     }
 
     /**
@@ -585,7 +623,7 @@ class Watchdog {
     queryAll(selector: string | HTMLElement[]) {
         // Implementation of queryAll method
         const elements = typeof selector === "string" ? document.querySelectorAll(selector) : selector;
-        elements.forEach((el) => {
+        return Array.from(elements).map((el) => {
             const handle = new WatchdogHandle(el as HTMLElement, this);
             this.handles.push(handle);
             return handle;

@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "A simple Javascript Library to detect potential cheating in educational applications that uses simple heuristics to detect it.",
   "main": "dist/sc-detect.js",
-  "types": "dist/index.d.ts",
+  "types": "types/index.d.ts",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "esbuild": "node esbuild.config.js"

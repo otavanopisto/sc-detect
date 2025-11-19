@@ -8,6 +8,15 @@ esbuild.build({
     bundle: true,
     minify: false,
     outfile: 'dist/sc-detect.js',
+    platform: 'neutral',
+    sourcemap: true,
+}).catch(() => process.exit(1));
+
+esbuild.build({
+    entryPoints: ['js/index.ts'],
+    bundle: true,
+    minify: false,
+    outfile: 'dist/sc-detect.browser.js',
     platform: 'browser',
     sourcemap: true,
 }).catch(() => process.exit(1));
@@ -16,12 +25,12 @@ esbuild.build({
     entryPoints: ['js/index.ts'],
     bundle: true,
     minify: true,
-    outfile: 'dist/sc-detect.min.js',
+    outfile: 'dist/sc-detect.browser.min.js',
     platform: 'browser',
-    sourcemap: true,
+    sourcemap: false,
 }).catch(() => process.exit(1));
 
 // typescript nonsense to generate .d.ts files
-exec('npx tsc --declaration --emitDeclarationOnly --outDir dist', (error) => {
+exec('npx tsc --declaration --emitDeclarationOnly --outDir types', (error) => {
     if (error) process.exit(1);
 });

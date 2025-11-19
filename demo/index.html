@@ -4,17 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SC Detect Demo</title>
-    <script src="../dist/sc-detect.js"></script>
+    <script src="../dist/sc-detect.browser.js"></script>
 </head>
 <body>
     <h1>SC Detect Demo</h1>
     <div>
         <div>What is the life expectancy of a cat?</div>
-        <textarea id="output" cols="100" rows="20"></textarea>
+        <textarea id="output1" cols="100" rows="20"></textarea>
+        <code id="analysis1"></code>
         <div>How many cats did Isaac Newton have?</div>
-        <textarea id="output" cols="100" rows="20"></textarea>
+        <textarea id="output2" cols="100" rows="20"></textarea>
+        <code id="analysis2"></code>
         <div>What cat breed has green fur?</div>
-        <textarea id="output" cols="100" rows="20"></textarea>
+        <textarea id="output3" cols="100" rows="20"></textarea>
+        <code id="analysis3"></code>
     </div>
+    <script>
+        // Example usage of scDetect
+        const handles = scDetect.queryAll("textarea");
+        console.log(handles);
+    </script>
 </body>
 </html>
