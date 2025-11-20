@@ -134,8 +134,15 @@ declare class WatchdogHandle {
     restart(): void;
     stop(): void;
     destroy(): void;
-    handleInput(e: Event): void;
+    handleInput(e: InputEvent): void;
+    /**
+     * If you want to refresh the internal input value
+     * Because you have some external code modifying the input value
+     * programmatically rather than the user typing or pasting, please
+     * call this method to update the internal state.
+     */
     handlePaste(e: ClipboardEvent): void;
+    handlePastedText(text: string): void;
     private recalculateCopyRelatesToPaste;
     private recalculateAIScore;
     private recalculateUnmodifiedPastes;

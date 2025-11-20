@@ -118,11 +118,11 @@ export function tokenIncludesScore(tokensContainer: string[], tokensContained: s
     // we need to look for exact sequences of tokensContained in tokensContainer in the same order as well as potential fragments
     let score = 0;
     // we will iterate over tokensContained to check each token as if it is found
-    for (let i = 0; i <= tokensContained.length - tokensContained.length; i++) {
+    for (let i = 0; i < tokensContained.length; i++) {
         // find the token in tokensContainer
         let thisTokenMaxScoreSoFar = 0;
         // now we will iterate over tokensContainer to find matches
-        for (let j = 0; j <= tokensContainer.length - tokensContained.length; j++) {
+        for (let j = 0; j < tokensContainer.length; j++) {
             // check if tokensContainer[j] matches tokensContained[i]
             if (tokensContainer[j] === tokensContained[i]) {
                 // now we need to see how many tokens match in sequence from this point

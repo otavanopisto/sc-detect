@@ -21,8 +21,17 @@
     </div>
     <script>
         // Example usage of scDetect
+        scDetect.initialize("MY_USER_ID");
         const handles = scDetect.queryAll("textarea");
-        console.log(handles);
+        handles.forEach((handle) => {
+            const lastAnalysis = handle.getLastAnalysis();
+            const targetId = handle.element.id.replace("output", "analysis");
+            document.getElementById(targetId).textContent = JSON.stringify(lastAnalysis, null, 2);
+            handle.addEventListenerOnNewScoreCalculated((analysis) => {
+                document.getElementById(targetId).textContent = JSON.stringify(analysis, null, 2);
+            });
+            handle.initialize();
+        });
     </script>
 </body>
 </html>

@@ -66,7 +66,7 @@ const DEFAULT_CONFIG: WatchdogConfig = {
         min_copy_event_time_weight: 0.5,
         min_tab_event_time_weight: 0.5,
     },
-    paste_size_threshold: 100,
+    paste_size_threshold: 30,
     copy_size_threshold: 30,
     settings: {
         relevant_copy_event_minutes: 5,
@@ -168,6 +168,9 @@ class WatchdogHandle {
     state: WatchdogHandleState;
     loadStateLoader: WatchdogStateLoader | null = null;
     listeners: Array<(analysis: IWatchdogAnalysis) => void> = [];
+    //shouldBeAttemptedToProcessAsInputDiff: boolean = false;
+    //lastInputValue: string = "";
+    //selectionWhilePaste: string = "";
 
     constructor(element: HTMLElement, watchdog: Watchdog) {
         this.element = element;
@@ -213,6 +216,11 @@ class WatchdogHandle {
         }
 
         // TODO other loading mechanisms can be added here
+        this.recalculateCopyRelatesToPaste();
+        this.recalculateAIScore();
+        this.recalculateUnmodifiedPastes();
+        this.recalculateKeepsSwitchingTabsAndCopyPasting();
+        this.onNewScoreCalculated();
     }
     getState() {
         return this.state;
@@ -221,12 +229,15 @@ class WatchdogHandle {
         if (!this.isInitialized) {
             throw new Error('WatchdogHandle is not initialized. Please call initialize() first.');
         }
+        
+        //this.lastInputValue = this.getContentFromHTMLElement();
+
         // Implementation of restart method for this handle
         // add event listeners to paste, input
         this.element.removeEventListener('paste', this.handlePaste);
-        this.element.removeEventListener('input', this.handleInput);
+        this.element.removeEventListener('input', this.handleInput as any);
         this.element.addEventListener('paste', this.handlePaste);
-        this.element.addEventListener('input', this.handleInput);
+        this.element.addEventListener('input', this.handleInput as any);
     }
     stop() {
         // Implementation of stop method for this handle
@@ -234,7 +245,7 @@ class WatchdogHandle {
 
         // remove all event listeners
         this.element.removeEventListener('paste', this.handlePaste);
-        this.element.removeEventListener('input', this.handleInput);
+        this.element.removeEventListener('input', this.handleInput as any);
     }
     destroy() {
         // Implementation of destroy method for this handle
@@ -242,13 +253,51 @@ class WatchdogHandle {
         // Additional cleanup
         this.watchdog.handles = this.watchdog.handles.filter(h => h !== this);
     }
-    handleInput(e: Event) {
+    handleInput(e: InputEvent) {
+        //if (e.inputType === "insertFromPaste" && this.shouldBeAttemptedToProcessAsInputDiff) {
+        //    this.shouldBeAttemptedToProcessAsInputDiff = false;
+
+        //    const originalText = this.lastInputValue.replace(this.selectionWhilePaste, '');
+        //    const currentText = this.getContentFromHTMLElement();
+
+        //    let newText = ""
+        //    let startIndex = 0;
+        //    let endIndex = currentText.length - 1;
+
+            // we want to move this cursor through the originalText and currentText and find where they differ to set our start index
+        //    while (startIndex < originalText.length && startIndex < currentText.length && originalText[startIndex] === currentText[startIndex]) {
+        //        startIndex++;
+        //    }
+            // now we do the same from the end to find the end index
+        //    while (endIndex >= 0 && endIndex >= startIndex && originalText[originalText.length - 1 - (currentText.length - 1 - endIndex)] === currentText[endIndex]) {
+        //        endIndex--;
+        //    }
+
+        //    if (endIndex >= startIndex) {
+        //        newText = currentText.substring(startIndex, endIndex + 1);
+        //        console.log(newText);
+        //        this.handlePastedText(newText);
+        //    }
+
+        //}
+
         this.recalculateCopyRelatesToPaste();
         this.recalculateAIScore();
         this.recalculateUnmodifiedPastes();
         this.recalculateKeepsSwitchingTabsAndCopyPasting();
         this.onNewScoreCalculated();
+
+        //this.lastInputValue = this.getContentFromHTMLElement();
     }
+    /**
+     * If you want to refresh the internal input value
+     * Because you have some external code modifying the input value
+     * programmatically rather than the user typing or pasting, please
+     * call this method to update the internal state.
+     */
+    //refreshInternalInputValue() {
+    //    this.lastInputValue = this.getContentFromHTMLElement();
+    //}
     handlePaste(e: ClipboardEvent) {
         const clipboardData = e.clipboardData;
         if (!clipboardData) {
@@ -257,6 +306,8 @@ class WatchdogHandle {
         const text = clipboardData.getData('text/plain');
 
         if (!text) {
+            //this.shouldBeAttemptedToProcessAsInputDiff = true;
+            //this.selectionWhilePaste = document.getSelection()?.toString() || "";
             return;
         }
 
@@ -265,9 +316,13 @@ class WatchdogHandle {
             return;
         }
 
+        this.handlePastedText(text);
+    }
+
+    handlePastedText(text: string) {
         const tokens = simpleTokenizer(text);
         const similarity = tokenSimilarityCompare(tokens, this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : []);
-        const containment = tokenContainmentCompare(this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : [], tokens);
+        const containment = this.watchdog.lastCopiedInfo?.tokens.length ? tokenContainmentCompare(tokens, this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : []) : 0;
 
         // similarities too high are likely modified pastes, so we just ignore them
         if (similarity > 0.9) {
@@ -309,7 +364,7 @@ class WatchdogHandle {
         // the cheating paste score is the average of the three factors
         // we weight equally the containment, as in if the pasted content relates to copied content and by how much it relates
         // and the foundRelatedCopyFactor and switchedTabsRecentlyFactor, which are time-weighted factors indicating recent related copy and tab switch events
-        const cheatingPasteScore = (containment + foundRelatedCopyFactor + switchedTabsRecentlyFactor) / 3;
+        const cheatingPasteScore = containment * foundRelatedCopyFactor * switchedTabsRecentlyFactor;
         let score = cheatingPasteScore;
 
         // we also check for AI signatures in the pasted content
@@ -317,7 +372,7 @@ class WatchdogHandle {
 
         // if aiScore is higher than cheatingPasteScore, we use that as the score
         if (aiScore >= cheatingPasteScore) {
-            score = aiScore;
+            score *= aiScore;
         }
 
         this.state.COPY_PASTE_CONTRIBUTIONS.push({
@@ -331,12 +386,6 @@ class WatchdogHandle {
             tabSwitchFactor: switchedTabsRecentlyFactor,
             content: text,
         });
-
-        this.recalculateCopyRelatesToPaste();
-        this.recalculateAIScore();
-        this.recalculateUnmodifiedPastes();
-        this.recalculateKeepsSwitchingTabsAndCopyPasting();
-        this.onNewScoreCalculated();
     }
     private recalculateCopyRelatesToPaste() {
         // calculate average score, guarding against empty contributions array
@@ -384,6 +433,18 @@ class WatchdogHandle {
                 unmodifiedPastes++;
                 // remove the pasted content from the working content to avoid double counting
                 contentWorking = contentWorking.replace(contribution.content, '');
+            } else {
+                // find a match sentence by sentence
+                const sentences = contribution.content.split(/(?<=[.!?])\s+|\n|\r\n/).filter(s => s.trim().length > 0);
+                let localUnmodifiedPastes = 0;
+                for (const sentence of sentences) {
+                    if (contentWorking.includes(sentence)) {
+                        localUnmodifiedPastes++;
+                        // remove the pasted content from the working content to avoid double counting
+                        contentWorking = contentWorking.replace(sentence, '');
+                    }
+                }
+                unmodifiedPastes += localUnmodifiedPastes / sentences.length;
             }
         });
 
@@ -734,15 +795,20 @@ class Watchdog {
         const clipboardData = event.clipboardData;
         if (clipboardData) {
             const content = clipboardData.getData('text/plain');
-            const size = content.length;
+            const selectedText = window.getSelection()?.toString() || '';
+            const finalContent = content || selectedText;
+            if (!finalContent) {
+                return;
+            }
+            const size = finalContent.length;
             // check if it fits the copy size threshold
             if (size < this.config.copy_size_threshold) {
                 return;
             }
             this.lastCopiedInfo = {
                 timestamp: new Date(),
-                content: content,
-                tokens: simpleTokenizer(content),
+                content: finalContent,
+                tokens: simpleTokenizer(finalContent),
                 size: size,
             };
             this.copyInfo10History.push(this.lastCopiedInfo);

@@ -8,8 +8,11 @@ export function findAISignatures(text: string, treshold: number = 1): number {
     const emDashCount = (text.match(/—/g) || []).length;
     score += emDashCount * 0.3;
 
+    const doubleMultiplierCount = (text.match(/\*\*/g) || []).length;
+    score += doubleMultiplierCount * 0.15;
+
     // find emojis
-    const emojiCount = (text.match(/[\u{1F600}-\u{1F64F}]/gu) || []).length;
+    const emojiCount = (text.match(/(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*|\p{Emoji_Modifier_Base}\p{Emoji_Modifier}/gu) || []).length;
     score += emojiCount * 0.5;
 
     // find phrases
@@ -18,6 +21,9 @@ export function findAISignatures(text: string, treshold: number = 1): number {
         'i am an ai',
         'i am an artificial intelligence',
         'as an artificial intelligence',
+        'chatgpt',
+        'gemini',
+        'claude'
     ];
     for (const phrase of aiPhrases) {
         const phraseCount = (text.toLowerCase().match(new RegExp(phrase, 'g')) || []).length;

@@ -84,9 +84,9 @@
   }
   function tokenIncludesScore(tokensContainer, tokensContained, minimum_relevant) {
     let score = 0;
-    for (let i = 0; i <= tokensContained.length - tokensContained.length; i++) {
+    for (let i = 0; i < tokensContained.length; i++) {
       let thisTokenMaxScoreSoFar = 0;
-      for (let j = 0; j <= tokensContainer.length - tokensContained.length; j++) {
+      for (let j = 0; j < tokensContainer.length; j++) {
         if (tokensContainer[j] === tokensContained[i]) {
           let thisTokenScoreAtThisLocation = 0;
           let matchLength = 0;
@@ -118,13 +118,18 @@
     let score = 0;
     const emDashCount = (text.match(/—/g) || []).length;
     score += emDashCount * 0.3;
-    const emojiCount = (text.match(/[\u{1F600}-\u{1F64F}]/gu) || []).length;
+    const doubleMultiplierCount = (text.match(/\*\*/g) || []).length;
+    score += doubleMultiplierCount * 0.15;
+    const emojiCount = (text.match(/(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*|\p{Emoji_Modifier_Base}\p{Emoji_Modifier}/gu) || []).length;
     score += emojiCount * 0.5;
     const aiPhrases = [
       "as an ai language model",
       "i am an ai",
       "i am an artificial intelligence",
-      "as an artificial intelligence"
+      "as an artificial intelligence",
+      "chatgpt",
+      "gemini",
+      "claude"
     ];
     for (const phrase of aiPhrases) {
       const phraseCount = (text.toLowerCase().match(new RegExp(phrase, "g")) || []).length;
@@ -150,7 +155,7 @@
       min_copy_event_time_weight: 0.5,
       min_tab_event_time_weight: 0.5
     },
-    paste_size_threshold: 100,
+    paste_size_threshold: 30,
     copy_size_threshold: 30,
     settings: {
       relevant_copy_event_minutes: 5,
@@ -163,6 +168,9 @@
     non_native_language: false
   };
   var WatchdogHandle = class {
+    //shouldBeAttemptedToProcessAsInputDiff: boolean = false;
+    //lastInputValue: string = "";
+    //selectionWhilePaste: string = "";
     constructor(element, watchdog2) {
       this.isInitialized = false;
       this.loadStateLoader = null;
@@ -201,6 +209,11 @@
       if (this.loadStateLoader) {
         this.state = await this.loadStateLoader();
       }
+      this.recalculateCopyRelatesToPaste();
+      this.recalculateAIScore();
+      this.recalculateUnmodifiedPastes();
+      this.recalculateKeepsSwitchingTabsAndCopyPasting();
+      this.onNewScoreCalculated();
     }
     getState() {
       return this.state;
@@ -230,6 +243,15 @@
       this.recalculateKeepsSwitchingTabsAndCopyPasting();
       this.onNewScoreCalculated();
     }
+    /**
+     * If you want to refresh the internal input value
+     * Because you have some external code modifying the input value
+     * programmatically rather than the user typing or pasting, please
+     * call this method to update the internal state.
+     */
+    //refreshInternalInputValue() {
+    //    this.lastInputValue = this.getContentFromHTMLElement();
+    //}
     handlePaste(e) {
       const clipboardData = e.clipboardData;
       if (!clipboardData) {
@@ -242,9 +264,12 @@
       if (text.length < this.watchdog.config.paste_size_threshold) {
         return;
       }
+      this.handlePastedText(text);
+    }
+    handlePastedText(text) {
       const tokens = simpleTokenizer(text);
       const similarity = tokenSimilarityCompare(tokens, this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : []);
-      const containment = tokenContainmentCompare(this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : [], tokens);
+      const containment = this.watchdog.lastCopiedInfo?.tokens.length ? tokenContainmentCompare(tokens, this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : []) : 0;
       if (similarity > 0.9) {
         return;
       }
@@ -275,11 +300,11 @@
       }
       const foundRelatedCopyFactor = (foundRelatedCopy ? 1 : 0) * foundRelatedCopyTimeFactor;
       const switchedTabsRecentlyFactor = (switchedTabsRecently ? 1 : 0) * switchedTabsRecentlyTimeFactor;
-      const cheatingPasteScore = (containment + foundRelatedCopyFactor + switchedTabsRecentlyFactor) / 3;
+      const cheatingPasteScore = containment * foundRelatedCopyFactor * switchedTabsRecentlyFactor;
       let score = cheatingPasteScore;
       const aiScore = findAISignatures(text, 1);
       if (aiScore >= cheatingPasteScore) {
-        score = aiScore;
+        score *= aiScore;
       }
       this.state.COPY_PASTE_CONTRIBUTIONS.push({
         pasteScore: cheatingPasteScore,
@@ -292,11 +317,6 @@
         tabSwitchFactor: switchedTabsRecentlyFactor,
         content: text
       });
-      this.recalculateCopyRelatesToPaste();
-      this.recalculateAIScore();
-      this.recalculateUnmodifiedPastes();
-      this.recalculateKeepsSwitchingTabsAndCopyPasting();
-      this.onNewScoreCalculated();
     }
     recalculateCopyRelatesToPaste() {
       if (this.state.COPY_PASTE_CONTRIBUTIONS.length === 0) {
@@ -336,6 +356,16 @@
         if (contentWorking.includes(contribution.content)) {
           unmodifiedPastes++;
           contentWorking = contentWorking.replace(contribution.content, "");
+        } else {
+          const sentences = contribution.content.split(/(?<=[.!?])\s+|\n|\r\n/).filter((s) => s.trim().length > 0);
+          let localUnmodifiedPastes = 0;
+          for (const sentence of sentences) {
+            if (contentWorking.includes(sentence)) {
+              localUnmodifiedPastes++;
+              contentWorking = contentWorking.replace(sentence, "");
+            }
+          }
+          unmodifiedPastes += localUnmodifiedPastes / sentences.length;
         }
       });
       const unmodifiedPastesRatio = unmodifiedPastes / totalPastes;
@@ -586,14 +616,19 @@
       const clipboardData = event.clipboardData;
       if (clipboardData) {
         const content = clipboardData.getData("text/plain");
-        const size = content.length;
+        const selectedText = window.getSelection()?.toString() || "";
+        const finalContent = content || selectedText;
+        if (!finalContent) {
+          return;
+        }
+        const size = finalContent.length;
         if (size < this.config.copy_size_threshold) {
           return;
         }
         this.lastCopiedInfo = {
           timestamp: /* @__PURE__ */ new Date(),
-          content,
-          tokens: simpleTokenizer(content),
+          content: finalContent,
+          tokens: simpleTokenizer(finalContent),
           size
         };
         this.copyInfo10History.push(this.lastCopiedInfo);
