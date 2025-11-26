@@ -168,6 +168,7 @@ class WatchdogHandle {
     state: WatchdogHandleState;
     loadStateLoader: WatchdogStateLoader | null = null;
     listeners: Array<(analysis: IWatchdogAnalysis) => void> = [];
+    doNotSetupEvents: boolean = false;
     //shouldBeAttemptedToProcessAsInputDiff: boolean = false;
     //lastInputValue: string = "";
     //selectionWhilePaste: string = "";
@@ -188,14 +189,21 @@ class WatchdogHandle {
         this.handlePaste = this.handlePaste.bind(this);
         this.handleInput = this.handleInput.bind(this);
     }
-    setStateLoader(fn: WatchdogStateLoader) {
+    public setStateLoader(fn: WatchdogStateLoader) {
         this.loadStateLoader = fn;
     }
-    async initialize() {
+
+    /**
+     * Initialize the WatchdogHandle
+     * @param doNotSetupEvents If true, do not setup event listeners, you will need to set them up manually
+     * by calling handlePaste and handleInput methods manually
+     */
+    async initialize(doNotSetupEvents: boolean = false) {
         if (!this.watchdog.isMonitoring) {
             throw new Error('Watchdog is not initialized. Please call scDetect.initialize() first.');
         }
         this.isInitialized = true;
+        this.doNotSetupEvents = doNotSetupEvents;
         // make sure that is in an input with contenteditable or textarea or input type=text
         const tagName = this.element.tagName.toLowerCase();
         const type = (this.element as HTMLInputElement).type;
@@ -208,7 +216,7 @@ class WatchdogHandle {
             throw new Error('Element is not a valid input field (textarea, input type=text, or contenteditable).');
         }
     }
-    async loadState() {
+    public async loadState() {
         // Implementation of loadState method for this handle
         // Load any saved state from this.state
         if (this.loadStateLoader) {
@@ -222,10 +230,10 @@ class WatchdogHandle {
         this.recalculateKeepsSwitchingTabsAndCopyPasting();
         this.onNewScoreCalculated();
     }
-    getState() {
+    public getState() {
         return this.state;
     }
-    restart() {
+    public restart() {
         if (!this.isInitialized) {
             throw new Error('WatchdogHandle is not initialized. Please call initialize() first.');
         }
@@ -234,26 +242,30 @@ class WatchdogHandle {
 
         // Implementation of restart method for this handle
         // add event listeners to paste, input
-        this.element.removeEventListener('paste', this.handlePaste);
-        this.element.removeEventListener('input', this.handleInput as any);
-        this.element.addEventListener('paste', this.handlePaste);
-        this.element.addEventListener('input', this.handleInput as any);
+        if (!this.doNotSetupEvents) {
+            this.element.removeEventListener('paste', this.handlePaste);
+            this.element.removeEventListener('input', this.handleInput as any);
+            this.element.addEventListener('paste', this.handlePaste);
+            this.element.addEventListener('input', this.handleInput as any);
+        }
     }
-    stop() {
+    public stop() {
         // Implementation of stop method for this handle
         this.isInitialized = false;
 
         // remove all event listeners
-        this.element.removeEventListener('paste', this.handlePaste);
-        this.element.removeEventListener('input', this.handleInput as any);
+        if (!this.doNotSetupEvents) {
+            this.element.removeEventListener('paste', this.handlePaste);
+            this.element.removeEventListener('input', this.handleInput as any);
+        }
     }
-    destroy() {
+    public destroy() {
         // Implementation of destroy method for this handle
         this.stop();
         // Additional cleanup
         this.watchdog.handles = this.watchdog.handles.filter(h => h !== this);
     }
-    handleInput(e: InputEvent) {
+    public handleInput(e: InputEvent) {
         //if (e.inputType === "insertFromPaste" && this.shouldBeAttemptedToProcessAsInputDiff) {
         //    this.shouldBeAttemptedToProcessAsInputDiff = false;
 
@@ -298,7 +310,7 @@ class WatchdogHandle {
     //refreshInternalInputValue() {
     //    this.lastInputValue = this.getContentFromHTMLElement();
     //}
-    handlePaste(e: ClipboardEvent) {
+    public handlePaste(e: ClipboardEvent) {
         const clipboardData = e.clipboardData;
         if (!clipboardData) {
             return;
@@ -319,7 +331,7 @@ class WatchdogHandle {
         this.handlePastedText(text);
     }
 
-    handlePastedText(text: string) {
+    private handlePastedText(text: string) {
         const tokens = simpleTokenizer(text);
         const similarity = tokenSimilarityCompare(tokens, this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : []);
         const containment = this.watchdog.lastCopiedInfo?.tokens.length ? tokenContainmentCompare(tokens, this.watchdog.lastCopiedInfo ? this.watchdog.lastCopiedInfo.tokens : []) : 0;
@@ -512,11 +524,7 @@ class WatchdogHandle {
         const finalScore = switchingTabAndCopyPastingScore / totalPatterns;
         this.state.KEEPS_SWITCHING_TABS_AND_COPY_PASTING = finalScore;
     }
-    getCurrentAISignatureScore() {
-        // get the current value as text from the
-        return findAISignatures(this.getContentFromHTMLElement(), 1);
-    }
-    getContentFromHTMLElement() {
+    private getContentFromHTMLElement() {
         // get the value of the input field, textarea or contenteditable
         if (this.element.tagName.toLowerCase() === 'textarea' || (this.element.tagName.toLowerCase() === 'input' && (this.element as HTMLInputElement).type === 'text')) {
             return (this.element as HTMLInputElement).value;
@@ -525,7 +533,7 @@ class WatchdogHandle {
         }
         return '';
     }
-    getLastAnalysis(): IWatchdogAnalysis {
+    public getLastAnalysis(): IWatchdogAnalysis {
         // we need to reweight these factors based on the config weights
         const WEIGHTED = {
             COPY_RELATES_TO_PASTE: this.state.COPY_RELATES_TO_PASTE*this.watchdog.config.weights.reasons.COPY_RELATES_TO_PASTE,
